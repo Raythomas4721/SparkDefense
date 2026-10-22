@@ -1,7 +1,6 @@
 import { BATTLE_RULES } from '../data/battle';
-import { ENEMIES } from '../data/enemies';
 import type { BattleEvent, BattleState, PendingSpawn } from '../types';
-import { allocateId, getStage, isLastWave } from './state';
+import { getStage, isLastWave, spawnEnemy } from './state';
 
 /** 開始第 index 波：排好這波所有怪物的出現時間 */
 export function startWave(state: BattleState, index: number, events?: BattleEvent[]): void {
@@ -33,10 +32,8 @@ export function advanceWaves(state: BattleState, dt: number, events: BattleEvent
 
   while (state.pendingSpawns.length > 0 && state.pendingSpawns[0]!.at <= state.time + 1e-9) {
     const spawn = state.pendingSpawns.shift()!;
-    const def = ENEMIES[spawn.enemy];
-    const id = allocateId(state);
-    state.enemies.push({ id, type: spawn.enemy, hp: def.hp, maxHp: def.hp, distance: 0 });
-    events.push({ type: 'enemySpawned', enemyId: id });
+    const enemy = spawnEnemy(state, spawn.enemy);
+    events.push({ type: 'enemySpawned', enemyId: enemy.id });
   }
 
   if (state.spawning && state.pendingSpawns.length === 0) {

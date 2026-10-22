@@ -1,6 +1,6 @@
 import type { TowerDefinition, TowerTypeId } from '../types';
 
-// DESIGN.md §5.2。Phase 1 只有弓兵塔與砲塔。
+// DESIGN.md §5.2
 export const TOWERS: Record<TowerTypeId, TowerDefinition> = {
   archer: {
     id: 'archer',
@@ -32,6 +32,37 @@ export const TOWERS: Record<TowerTypeId, TowerDefinition> = {
     attack: 'shell',
     flightTime: 0.7,
   },
+  barracks: {
+    id: 'barracks',
+    name: '兵營',
+    summary: '派 3 名士兵擋在路上；擋不住飛行',
+    costs: [80, 70, 110],
+    tiers: [
+      { damage: 4, interval: 1.0, range: 110 },
+      { damage: 6, interval: 1.0, range: 110 },
+      { damage: 9, interval: 1.0, range: 110 },
+    ],
+    damageType: 'physical',
+    canHitFlying: false,
+    attack: 'barracks',
+    soldier: { count: 3, hp: [60, 100, 150], armor: [0, 2, 4], respawn: 10 },
+  },
+  mage: {
+    id: 'mage',
+    name: '法師塔',
+    summary: '魔法無視護甲；可觸發元素反應',
+    costs: [100, 80, 120],
+    tiers: [
+      { damage: 20, interval: 1.4, range: 150 },
+      { damage: 30, interval: 1.4, range: 160 },
+      { damage: 45, interval: 1.4, range: 170 },
+    ],
+    damageType: 'magic',
+    canHitFlying: true,
+    elemental: true,
+    attack: 'arrow',
+    projectileSpeed: 450,
+  },
 };
 
-export const TOWER_ORDER: readonly TowerTypeId[] = ['archer', 'cannon'];
+export const TOWER_ORDER: readonly TowerTypeId[] = ['archer', 'barracks', 'cannon', 'mage'];

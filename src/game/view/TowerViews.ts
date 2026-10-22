@@ -3,7 +3,8 @@ import { slotPosition } from '../../core/battle/state';
 import type { BattleState, TowerInstance } from '../../core/types';
 import { DEPTH, FONT_FAMILY } from '../config';
 import { TIER_LABEL } from '../text';
-import { COLORS, TEXT } from '../theme';
+import { ELEMENT_NAMES } from '../../core/data/elements';
+import { COLORS, ELEMENT_COLORS, TEXT } from '../theme';
 
 interface TowerSprite {
   container: Phaser.GameObjects.Container;
@@ -11,7 +12,15 @@ interface TowerSprite {
   tier: number;
 }
 
-const LABEL = { archer: '弓', cannon: '砲' } as const;
+const LABEL: Record<TowerInstance['type'], string> = { archer: '弓', barracks: '兵', cannon: '砲', mage: '法' };
+
+/** 六角形的頂點（法師塔底座） */
+function hexagon(radius: number): Phaser.Geom.Point[] {
+  return Array.from({ length: 6 }, (_, i) => {
+    const a = (Math.PI / 3) * i - Math.PI / 2;
+    return new Phaser.Geom.Point(Math.cos(a) * radius, Math.sin(a) * radius);
+  });
+}
 
 /** 讓畫面上的塔和 state.towers 保持一致 */
 export class TowerViews {
@@ -55,12 +64,29 @@ export class TowerViews {
     if (tower.type === 'archer') {
       g.fillStyle(COLORS.archerFill, 1).fillRoundedRect(-20, -20, 40, 40, 6);
       g.lineStyle(3, COLORS.archerStroke, 1).strokeRoundedRect(-20, -20, 40, 40, 6);
-    } else {
+    } else if (tower.type === 'barracks') {
+      // 盾形：上方平、下方尖
+      const shield = [
+        new Phaser.Geom.Point(-20, -19),
+        new Phaser.Geom.Point(20, -19),
+        new Phaser.Geom.Point(20, 4),
+        new Phaser.Geom.Point(0, 21),
+        new Phaser.Geom.Point(-20, 4),
+      ];
+      g.fillStyle(COLORS.barracksFill, 1).fillPoints(shield, true);
+      g.lineStyle(3, COLORS.barracksStroke, 1).strokePoints(shield, true);
+    } else if (tower.type === 'cannon') {
       g.fillStyle(COLORS.cannonFill, 1).fillCircle(0, 0, 22);
       g.lineStyle(3, COLORS.cannonStroke, 1).strokeCircle(0, 0, 22);
+    } else {
+      const edge = tower.element ? ELEMENT_COLORS[tower.element] : COLORS.slotStroke;
+      g.fillStyle(COLORS.mageFill, 1).fillPoints(hexagon(23), true);
+      g.lineStyle(3, edge, 1).strokePoints(hexagon(23), true);
     }
+    // 法師塔顯示元素字（炎／潮／森），其他塔顯示塔種
+    const labelText = tower.element ? ELEMENT_NAMES[tower.element] : LABEL[tower.type];
     const label = this.scene.add
-      .text(0, -1, LABEL[tower.type], { fontFamily: FONT_FAMILY, fontSize: '18px', color: TEXT.normal })
+      .text(0, -1, labelText, { fontFamily: FONT_FAMILY, fontSize: '18px', color: TEXT.normal })
       .setOrigin(0.5);
     const tierText = this.scene.add
       .text(0, 31, TIER_LABEL[tower.tier], {

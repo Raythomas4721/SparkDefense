@@ -14,6 +14,8 @@ export const BATTLE_RULES = {
   sellRefundRatio: 0.6,
   /** 物理傷害扣護甲後的最低傷害 */
   minPhysicalDamage: 1,
+  /** 敵人走到阻擋者這個距離內就會被擋下 */
+  blockRadius: 30,
 } as const;
 
 /** 星級門檻：剩餘耐久達到這個值以上（DESIGN.md §4.3） */

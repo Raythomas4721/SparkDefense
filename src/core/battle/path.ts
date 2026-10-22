@@ -57,6 +57,23 @@ export function tangentAt(path: PathData, d: number): Vec2 {
   return { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
 }
 
+/** 路線上離 p 最近的點：座標、沿路線的距離、與 p 的直線距離 */
+export function nearestOnPath(path: PathData, p: Vec2): { pos: Vec2; along: number; offset: number } {
+  let best = { pos: path.points[0]!, along: 0, offset: Infinity };
+  for (let i = 0; i < path.points.length - 1; i++) {
+    const a = path.points[i]!;
+    const b = path.points[i + 1]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy || 1;
+    const t = Math.min(1, Math.max(0, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+    const pos = { x: a.x + dx * t, y: a.y + dy * t };
+    const offset = distance(pos, p);
+    if (offset < best.offset) best = { pos, along: path.cumulative[i]! + Math.sqrt(lenSq) * t, offset };
+  }
+  return best;
+}
+
 export function distance(a: Vec2, b: Vec2): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }

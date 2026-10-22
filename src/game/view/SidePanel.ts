@@ -1,23 +1,27 @@
 import Phaser from 'phaser';
 import { earlyCallBonus, sellValue, upgradeCost } from '../../core/battle/commands';
-import { findTower, getStage } from '../../core/battle/state';
+import { mageCoverage, nearbyMageElements } from '../../core/battle/queries';
+import { findTower, getStage, slotPosition } from '../../core/battle/state';
+import { ELEMENT_NAMES, ELEMENTS, MARK_NAMES, MARK_RULES, REACTION_NAMES, reactionBetween } from '../../core/data/elements';
 import { ENEMIES } from '../../core/data/enemies';
+import { HERO_RULES, HEROES } from '../../core/data/heroes';
 import { TOWER_ORDER, TOWERS } from '../../core/data/towers';
-import type { BattleState, EnemyTypeId, TowerInstance, TowerTierStats, TowerTypeId } from '../../core/types';
+import type { BattleState, Element, EnemyTypeId, TierIndex, TowerInstance, TowerTypeId } from '../../core/types';
 import { Button } from '../ui/Button';
 import { DEPTH, FONT_FAMILY, GAME_HEIGHT, PANEL_WIDTH, PANEL_X } from '../config';
 import { TIER_LABEL } from '../text';
-import { COLORS, TEXT } from '../theme';
+import { COLORS, ELEMENT_COLORS, TEXT } from '../theme';
 import type { Selection } from './BattleRenderer';
 
 export interface PanelActions {
-  build(slot: number, type: TowerTypeId): void;
+  build(slot: number, type: TowerTypeId, element?: Element): void;
   upgrade(towerId: number): void;
   sell(towerId: number): void;
   nextWave(): void;
   toggleSpeed(): void;
   togglePause(): void;
   restart(): void;
+  startRally(towerId: number): void;
   toast(message: string): void;
 }
 
@@ -122,6 +126,7 @@ export class SidePanel {
       const cost = upgradeCost(tower);
       return `tower:${tower.id}:${tower.tier}:${cost !== null && state.gold >= cost ? 1 : 0}`;
     }
+    if (selection.kind === 'hero' && state.hero) return `hero:${state.hero.alive ? 1 : 0}`;
     return `none:${state.waveIndex}:${state.waveIndex === -1 ? 'prep' : 'play'}`;
   }
 
@@ -130,6 +135,7 @@ export class SidePanel {
     this.liveUpdaters = [];
     if (state.result !== 'playing') return;
     if (selection.kind === 'slot') this.buildSlotContext(state, selection.slot);
+    else if (selection.kind === 'hero' && state.hero) this.buildHeroContext(state);
     else if (selection.kind === 'tower') {
       const tower = findTower(state, selection.towerId);
       if (tower) this.buildTowerContext(state, tower);
@@ -172,34 +178,58 @@ export class SidePanel {
   private buildSlotContext(state: BattleState, slot: number): void {
     let y = CONTEXT_TOP;
     this.contextText(X, y, '空塔位：選擇要蓋的塔', 17, TEXT.normal);
-    y += 34;
+    y += 30;
     for (const type of TOWER_ORDER) {
       const def = TOWERS[type];
       const cost = def.costs[0];
       const affordable = state.gold >= cost;
-      new Button(
-        this.scene,
-        {
-          x: X,
-          y,
-          width: W,
-          height: 44,
-          label: `${def.name}　${cost} 金`,
-          fontSize: 17,
-          variant: 'primary',
-          onClick: () => this.actions.build(slot, type),
-          onDisabledClick: () => this.actions.toast(`金幣不足，還差 ${cost - state.gold}`),
-        },
-        this.context,
-      ).setEnabled(affordable);
-      y += 50;
-      y += this.contextText(X, y, def.summary, 13, TEXT.dim, W).height + 2;
-      y += this.contextText(X, y, statsLine(def.tiers[0]), 13, TEXT.dim, W).height + 2;
-      if (!affordable) {
-        this.contextText(X, y, `還差 ${cost - state.gold} 金`, 13, TEXT.warn);
-        y += 20;
+      const shortfall = affordable ? '' : `（差 ${cost - state.gold}）`;
+      const notEnough = () => this.actions.toast(`金幣不足，還差 ${cost - state.gold}`);
+
+      if (def.elemental) {
+        // 法師塔：先選元素才蓋
+        this.contextText(X, y, `${def.name}　${cost} 金${shortfall}`, 16, affordable ? TEXT.normal : TEXT.disabled);
+        y += 24;
+        const bw = (W - 16) / 3;
+        ELEMENTS.forEach((element, i) => {
+          new Button(
+            this.scene,
+            {
+              x: X + i * (bw + 8),
+              y,
+              width: bw,
+              height: 38,
+              label: ELEMENT_NAMES[element],
+              fontSize: 18,
+              color: ELEMENT_COLORS[element],
+              onClick: () => this.actions.build(slot, type, element),
+              onDisabledClick: notEnough,
+            },
+            this.context,
+          ).setEnabled(affordable);
+        });
+        y += 42;
+      } else {
+        new Button(
+          this.scene,
+          {
+            x: X,
+            y,
+            width: W,
+            height: 40,
+            label: `${def.name}　${cost} 金${shortfall}`,
+            fontSize: 16,
+            variant: 'primary',
+            onClick: () => this.actions.build(slot, type),
+            onDisabledClick: notEnough,
+          },
+          this.context,
+        ).setEnabled(affordable);
+        y += 44;
       }
-      y += 14;
+      y += this.contextText(X, y, def.summary, 13, TEXT.dim, W).height;
+      if (def.elemental) y += this.contextText(X, y, mageHint(nearbyMageElements(state, slot)), 13, TEXT.good, W).height;
+      y += 12;
     }
   }
 
@@ -207,9 +237,23 @@ export class SidePanel {
     const def = TOWERS[tower.type];
     const stats = def.tiers[tower.tier];
     let y = CONTEXT_TOP;
-    this.contextText(X, y, `${def.name}　階 ${TIER_LABEL[tower.tier]}`, 19, TEXT.normal);
+    const name = tower.element ? `${def.name}・${ELEMENT_NAMES[tower.element]}` : def.name;
+    this.contextText(X, y, `${name}　階 ${TIER_LABEL[tower.tier]}`, 19, TEXT.normal);
     y += 32;
-    y += this.contextText(X, y, statsLine(stats), 14, TEXT.dim, W).height + 4;
+    y += this.contextText(X, y, statsText(tower.type, tower.tier), 14, TEXT.dim, W).height + 4;
+    if (tower.type === 'barracks') {
+      new Button(
+        this.scene,
+        { x: X, y, width: W, height: 36, label: '設定集結點', fontSize: 15, onClick: () => this.actions.startRally(tower.id) },
+        this.context,
+      );
+      y += 42;
+    }
+    if (tower.element) {
+      y += this.contextText(X, y, markDescription(tower.element), 13, TEXT.dim, W).height + 2;
+      const partners = mageCoverage(state, slotPosition(state, tower.slot), stats.range, tower.id).flatMap((p) => p.elements);
+      y += this.contextText(X, y, partnerHint(tower.element, partners), 13, TEXT.good, W).height + 4;
+    }
     const damageText = this.contextText(X, y, '', 14, TEXT.dim);
     this.liveUpdaters.push((s) => {
       const current = findTower(s, tower.id);
@@ -239,8 +283,7 @@ export class SidePanel {
         this.context,
       ).setEnabled(affordable);
       y += 50;
-      const next = def.tiers[tower.tier + 1]!;
-      y += this.contextText(X, y, upgradePreview(stats, next), 13, TEXT.good, W).height + 4;
+      y += this.contextText(X, y, upgradePreview(tower.type, tower.tier), 13, TEXT.good, W).height + 4;
       if (!affordable) {
         this.contextText(X, y, `還差 ${cost - state.gold} 金`, 13, TEXT.warn);
         y += 20;
@@ -264,6 +307,43 @@ export class SidePanel {
     );
     y += 46;
     this.contextText(X, y, '賣出退還總花費的 60%', 12, TEXT.dim);
+  }
+
+  private buildHeroContext(state: BattleState): void {
+    const hero = state.hero!;
+    const def = HEROES[hero.heroId];
+    const a = def.attack;
+    let y = CONTEXT_TOP;
+    this.contextText(X, y, `${def.name}・${def.title}`, 19, TEXT.normal);
+    y += 28;
+    this.contextText(X, y, `${ELEMENT_NAMES[def.element]}元素・${def.role}`, 14, `#${ELEMENT_COLORS[def.element].toString(16)}`);
+    y += 24;
+
+    const hpText = this.contextText(X, y, '', 14, TEXT.normal);
+    this.liveUpdaters.push((s) => {
+      const h = s.hero;
+      if (!h) return;
+      hpText.setText(h.alive ? `生命 ${Math.ceil(h.hp)} / ${h.maxHp}　護甲 ${h.armor}` : `陣亡，${Math.ceil(h.respawn)} 秒後復活`);
+      hpText.setColor(h.alive ? TEXT.normal : TEXT.hp);
+    });
+    y += 22;
+    const attackStats = [`傷害 ${a.damage}`, `每 ${a.interval} 秒`, `射程 ${a.range}`];
+    if (a.pierce) attackStats.push(`穿透 ${a.pierce}`);
+    if (a.splashRadius) attackStats.push(`範圍 ${a.splashRadius}`);
+    y += this.contextText(X, y, attackStats.join('・'), 13, TEXT.dim, W).height + 8;
+
+    y += this.contextText(X, y, `被動：${def.passiveText}`, 13, TEXT.dim, W).height + 6;
+    y += this.contextText(X, y, `技能「${def.skill.name}」（冷卻 ${def.skill.cooldown} 秒）`, 14, TEXT.good, W).height + 2;
+    y += this.contextText(X, y, def.skill.description, 13, TEXT.dim, W).height + 6;
+    y += this.contextText(
+      X,
+      y,
+      `元素加持：半徑 ${HERO_RULES.auraRadius} 內的${ELEMENT_NAMES[def.element]}法師塔傷害 +${HERO_RULES.auraBonus * 100}%`,
+      13,
+      TEXT.dim,
+      W,
+    ).height + 12;
+    this.contextText(X, y, '移動：點路上的位置\n技能：點左下角的技能按鈕', 13, TEXT.warn, W);
   }
 
   // ── 控制列 ─────────────────────────────────────────────
@@ -319,17 +399,36 @@ export class SidePanel {
   }
 }
 
-function statsLine(stats: TowerTierStats): string {
+function statsText(type: TowerTypeId, tier: TierIndex): string {
+  const def = TOWERS[type];
+  const stats = def.tiers[tier];
+  if (def.soldier) {
+    return (
+      `士兵 ${def.soldier.count} 名・生命 ${def.soldier.hp[tier]}・護甲 ${def.soldier.armor[tier]}\n` +
+      `每名傷害 ${stats.damage}／${stats.interval} 秒・集結範圍 ${stats.range}`
+    );
+  }
   const parts = [`傷害 ${stats.damage}`, `每 ${stats.interval} 秒`, `射程 ${stats.range}`];
   if (stats.splashRadius) parts.push(`範圍 ${stats.splashRadius}`);
   return parts.join('・');
 }
 
-function upgradePreview(current: TowerTierStats, next: TowerTierStats): string {
+function upgradePreview(type: TowerTypeId, tier: TierIndex): string {
+  const def = TOWERS[type];
+  const nextTier = (tier + 1) as TierIndex;
+  const current = def.tiers[tier];
+  const next = def.tiers[nextTier];
   const parts: string[] = [];
-  if (next.damage !== current.damage) parts.push(`傷害 ${current.damage} → ${next.damage}`);
-  if (next.range !== current.range) parts.push(`射程 ${current.range} → ${next.range}`);
-  if (next.splashRadius !== current.splashRadius) parts.push(`範圍 ${current.splashRadius} → ${next.splashRadius}`);
+  const diff = (label: string, a: number | undefined, b: number | undefined) => {
+    if (a !== b) parts.push(`${label} ${a} → ${b}`);
+  };
+  diff(def.soldier ? '每名傷害' : '傷害', current.damage, next.damage);
+  diff('射程', current.range, next.range);
+  diff('範圍', current.splashRadius, next.splashRadius);
+  if (def.soldier) {
+    diff('士兵生命', def.soldier.hp[tier], def.soldier.hp[nextTier]);
+    diff('士兵護甲', def.soldier.armor[tier], def.soldier.armor[nextTier]);
+  }
   return parts.join('\n');
 }
 
@@ -344,8 +443,43 @@ function wavePreview(stageId: string, index: number): Array<{ enemy: EnemyTypeId
 function enemyTraits(enemy: EnemyTypeId): string {
   const def = ENEMIES[enemy];
   const traits: string[] = [];
-  if (def.armor > 0) traits.push(`護甲 ${def.armor}：弓箭傷害大減`);
+  if (def.tags.includes('boss')) traits.push('首領');
+  if (def.tags.includes('flying')) traits.push('飛行：砲塔打不到');
+  if (def.tags.includes('swarm')) traits.push('成群出現：適合範圍攻擊');
+  if (def.armor > 0) traits.push(`護甲 ${def.armor}：物理傷害大減，魔法無視`);
   if (def.speed >= 100) traits.push('速度很快');
+  if (def.summon) traits.push(`每 ${def.summon.interval} 秒召喚${ENEMIES[def.summon.enemy].name}`);
   if (def.leakDamage > 1) traits.push(`漏過扣 ${def.leakDamage} 耐久`);
   return traits.join('，');
+}
+
+function markDescription(element: Element): string {
+  const detail = {
+    fire: `每秒 ${MARK_RULES.burnDps} 點傷害`,
+    water: `移速 −${MARK_RULES.wetSlow * 100}%`,
+    wood: '只用來觸發反應',
+  }[element];
+  return `附加印記：${MARK_NAMES[element]}（${detail}）`;
+}
+
+/** element 和 others 中每個不同的元素會觸發的反應 */
+function reactionsWith(element: Element, others: readonly Element[]): Array<{ other: Element; name: string }> {
+  return [...new Set(others)]
+    .filter((other) => other !== element)
+    .map((other) => ({ other, name: REACTION_NAMES[reactionBetween(element, other)!] }));
+}
+
+/** 已蓋好的法師塔：射程內和哪些元素重疊、會觸發什麼反應 */
+function partnerHint(element: Element, partners: readonly Element[]): string {
+  const list = reactionsWith(element, partners).map((r) => `${ELEMENT_NAMES[r.other]}塔 → ${r.name}`);
+  return list.length > 0 ? `射程重疊：${list.join('、')}` : '射程內沒有不同元素的法師塔，不會觸發反應';
+}
+
+/** 準備蓋法師塔：選不同元素各會和附近的塔觸發什麼反應 */
+function mageHint(nearby: readonly Element[]): string {
+  if (nearby.length === 0) return '附近沒有法師塔。兩座不同元素的法師塔射程重疊時，會觸發反應';
+  const options = ELEMENTS.map((e) => ({ e, names: reactionsWith(e, nearby).map((r) => r.name) }))
+    .filter((o) => o.names.length > 0)
+    .map((o) => `選${ELEMENT_NAMES[o.e]}→${o.names.join('、')}`);
+  return `射程內有${nearby.map((e) => ELEMENT_NAMES[e]).join('、')}塔：${options.join('，')}`;
 }

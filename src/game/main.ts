@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './config';
 import { BattleScene } from './scenes/BattleScene';
+import { StarterScene } from './scenes/StarterScene';
 
 new Phaser.Game({
   type: Phaser.AUTO,
@@ -12,5 +13,6 @@ new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BattleScene],
+  // 第一個場景會判斷要不要顯示御三家選擇，選過就直接進戰鬥
+  scene: [StarterScene, BattleScene],
 });

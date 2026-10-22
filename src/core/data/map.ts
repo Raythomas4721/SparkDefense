@@ -27,5 +27,7 @@ export const MAPS: Record<string, MapDefinition> = {
       { x: 900, y: 360 }, // 8 最後轉角外側
       { x: 890, y: 560 }, // 9 星核前
     ],
+    // 第二個 U 形的左側直路，靠近兩個熱區
+    heroStart: { x: 530, y: 400 },
   },
 };

@@ -13,6 +13,8 @@ export interface ButtonConfig {
   label: string;
   fontSize?: number;
   variant?: ButtonVariant;
+  /** 指定底色，取代 variant 的顏色（例如元素按鈕） */
+  color?: number;
   onClick: () => void;
   /** 按到停用中的按鈕時呼叫，用來告訴玩家為什麼不能按 */
   onDisabledClick?: () => void;
@@ -29,12 +31,12 @@ export class Button {
   readonly bg: Phaser.GameObjects.Rectangle;
   readonly text: Phaser.GameObjects.Text;
   private enabled = true;
-  private variant: ButtonVariant;
+  private readonly color: number;
 
   constructor(scene: Phaser.Scene, private readonly config: ButtonConfig, container?: Phaser.GameObjects.Container) {
     const { x, y, width, height } = config;
-    this.variant = config.variant ?? 'normal';
-    this.bg = scene.add.rectangle(x, y, width, height, VARIANT_COLOR[this.variant]).setOrigin(0, 0);
+    this.color = config.color ?? VARIANT_COLOR[config.variant ?? 'normal'];
+    this.bg = scene.add.rectangle(x, y, width, height, this.color).setOrigin(0, 0);
     this.bg.setInteractive({ useHandCursor: true });
     this.text = scene.add
       .text(x + width / 2, y + height / 2, config.label, {
@@ -56,7 +58,7 @@ export class Button {
   setEnabled(enabled: boolean): this {
     if (enabled === this.enabled) return this;
     this.enabled = enabled;
-    this.bg.setFillStyle(enabled ? VARIANT_COLOR[this.variant] : COLORS.buttonDisabled);
+    this.bg.setFillStyle(enabled ? this.color : COLORS.buttonDisabled);
     this.text.setColor(enabled ? TEXT.normal : TEXT.disabled);
     return this;
   }

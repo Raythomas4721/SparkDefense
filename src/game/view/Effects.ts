@@ -30,9 +30,9 @@ export class Effects {
     });
   }
 
-  explosion(x: number, y: number, radius: number): void {
-    const ring = this.scene.add.circle(x, y, radius, COLORS.explosion, 0.45).setDepth(DEPTH.effects);
-    ring.setStrokeStyle(2, COLORS.explosion, 0.9);
+  explosion(x: number, y: number, radius: number, color: number = COLORS.explosion): void {
+    const ring = this.scene.add.circle(x, y, radius, color, 0.45).setDepth(DEPTH.effects);
+    ring.setStrokeStyle(2, color, 0.9);
     this.scene.tweens.add({
       targets: ring,
       scale: { from: 0.3, to: 1 },
@@ -40,6 +40,45 @@ export class Effects {
       duration: 280,
       onComplete: () => ring.destroy(),
     });
+  }
+
+  /** 擴散的圓環（技能範圍） */
+  ring(x: number, y: number, radius: number, color: number, duration = 450): void {
+    const ring = this.scene.add.circle(x, y, radius, color, 0.18).setDepth(DEPTH.effects);
+    ring.setStrokeStyle(3, color, 0.9);
+    this.scene.tweens.add({
+      targets: ring,
+      scale: { from: 0.5, to: 1 },
+      alpha: { from: 1, to: 0 },
+      duration,
+      onComplete: () => ring.destroy(),
+    });
+  }
+
+  /** 延遲爆炸的預警圈（隕火），時間到消失 */
+  warning(x: number, y: number, radius: number, color: number, seconds: number): void {
+    const ring = this.scene.add.circle(x, y, radius, color, 0.12).setDepth(DEPTH.effects);
+    ring.setStrokeStyle(2, color, 0.9);
+    this.scene.tweens.add({ targets: ring, alpha: { from: 0.5, to: 1 }, duration: 200, yoyo: true, repeat: -1 });
+    this.scene.time.delayedCall(seconds * 1000, () => ring.destroy());
+  }
+
+  /** 直線光束（穿透攻擊、潮汐穿心） */
+  beam(from: { x: number; y: number }, to: { x: number; y: number }, color: number, width: number, duration = 250): void {
+    const g = this.scene.add.graphics().setDepth(DEPTH.effects);
+    g.lineStyle(width, color, 0.9).lineBetween(from.x, from.y, to.x, to.y);
+    this.scene.tweens.add({ targets: g, alpha: 0, duration, onComplete: () => g.destroy() });
+  }
+
+  /** 近戰揮砍的扇形閃光 */
+  slash(from: { x: number; y: number }, to: { x: number; y: number }, radius: number, angleDeg: number, color: number): void {
+    const g = this.scene.add.graphics().setDepth(DEPTH.effects);
+    const facing = Math.atan2(to.y - from.y, to.x - from.x);
+    const half = (angleDeg / 2) * (Math.PI / 180);
+    g.fillStyle(color, 0.35);
+    g.slice(from.x, from.y, radius, facing - half, facing + half, false);
+    g.fillPath();
+    this.scene.tweens.add({ targets: g, alpha: 0, duration: 180, onComplete: () => g.destroy() });
   }
 
   pulse(target: Phaser.GameObjects.GameObject): void {
